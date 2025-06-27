@@ -1,0 +1,15 @@
+venv
+*/venv
+*/.venv
+**/.env
+
+# Mac/OSX
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.iml
