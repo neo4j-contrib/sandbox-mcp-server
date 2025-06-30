@@ -1,0 +1,1347 @@
+openapi: 3.0.0
+info:
+  version: '1.0'
+  title: Neo4j Sandbox API
+  description: API for managing Neo4j Sandbox instances and related resources.
+  contact:
+    name: Neo4j Developer Relations
+    url: https://neo4j.com/developer/
+
+
+servers:
+  - url: 'https://api.sandbox.neo4j.com/'
+    description: Sandbox API endpoint
+    variables:
+      stage:
+        default: development
+        description: The deployment stage (e.g., development, main)
+  - url: 'http://localhost:3000/{basePath}'
+    description: Local development server
+    variables:
+      basePath:
+        default: main # Or the appropriate local base path
+        description: Base path for local serverless offline
+  - url: 'https://efz1cnte2e.execute-api.us-east-1.amazonaws.com/main'
+    description: Staging/Production
+
+paths:
+  /SandboxGetUsecases:
+    get:
+      summary: Get Use Cases
+      description: Retrieves a list of available sandbox use cases.
+      operationId: getUseCases
+      parameters:
+        - name: additionalUc
+          in: query
+          description: JSON string array of additional use cases to include. e.g., '["uc1", "uc2"]'
+          required: false
+          schema:
+            type: string # Should be parsed as JSON array server-side
+      responses:
+        '200':
+          description: A list of use cases.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UseCases'
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxRunInstance:
+    post:
+      summary: Run Sandbox Instance
+      description: Creates and deploys a new sandbox instance or returns an existing one if duplicates are not allowed and one exists.
+      operationId: runInstance
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunInstanceRequest"
+      responses:
+        '200':
+          description: Sandbox instance details or draft confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunInstanceResponse"
+        '400':
+          description: Bad Request (e.g., invalid use case, or sandbox already exists and duplicates disabled).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunInstanceResponse" # Contains errorString
+        # '401': # Implicit via security scheme
+        #   description: Unauthorized
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxTwitterAuth:
+    get:
+      summary: Get Twitter Auth URL (Deprecated)
+      description: '[DEPRECATED] Initiates Twitter OAuth1.0a flow by providing an authorization URL.'
+      operationId: getTwitterAuthUrl
+      parameters:
+        - name: redirect_url
+          in: query
+          description: URL to redirect to after Twitter auth. Defaults to a preconfigured URL if not provided.
+          required: false
+          schema:
+            type: string
+            format: url
+      responses:
+        '200':
+          description: Twitter authorization redirect URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwitterAuthResponse"
+        '500':
+          description: Failed to get authorization URL.
+          content:
+            text/plain:
+              schema:
+                type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxTwitterExchangeToken:
+    get:
+      summary: Exchange Twitter Token (Deprecated)
+      description: '[DEPRECATED] Exchanges Twitter OAuth token and verifier for an access token.'
+      operationId: exchangeTwitterToken
+      parameters:
+        - name: oauth_token
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: oauth_verifier
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Twitter access token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwitterExchangeResponse"
+        '500':
+          description: Failed to get access token.
+          content:
+            text/plain:
+              schema:
+                type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxStopInstance:
+    post:
+      summary: Stop Sandbox Instance
+      description: Stops a running sandbox instance.
+      operationId: stopInstance
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StopInstanceRequest"
+      responses:
+        '200':
+          description: Successfully stopped the instance or no running tasks found.
+          content:
+            application/json: # Empty object
+              schema:
+                $ref: "#/components/schemas/StopInstanceResponse"
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxExtend:
+    post:
+      summary: Extend Sandbox Lifetime
+      description: Extends the lifetime of a user's sandbox(es). User profile details can be submitted with this request.
+      operationId: extendSandbox
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        required: true # Even if body is empty, it is expected.
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtendRequest"
+      responses:
+        '200':
+          description: Sandbox lifetime extended successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtendResponse"
+        '500': # Based on current lambda logic for failures
+          description: Failed to extend sandbox (e.g., user has no profile, or other error).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtendResponse" # Contains status: FAIL and error
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxAuthdGetInstanceByHashKey:
+    get:
+      summary: Get Sandbox Instance (Authenticated)
+      description: Retrieves details of a specific sandbox instance for the authenticated user.
+      operationId: getAuthdInstanceByHashKey
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: sandboxHashKey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: verifyConnect
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Sandbox details. Can be JSON or plain text 'ip:port'.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthdGetInstanceByHashKeyResponse"
+            text/plain:
+              schema:
+                type: string
+                example: "127.0.0.1:7687"
+        '404':
+          description: Sandbox not found or connection verification failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthdGetInstanceByHashKeyResponse" # Can also return partial record on verify fail
+            text/plain: # For "Sandbox not found" or "Found sandbox, but no ip"
+              schema:
+                type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxGetInstanceByHashKey:
+    get:
+      summary: Get Sandbox Instance (Public)
+      description: Retrieves details of a specific sandbox instance. Does not require authentication.
+      operationId: getInstanceByHashKey
+      parameters:
+        - name: sandboxHashKey
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: verifyConnect
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Sandbox details. Can be JSON or plain text 'ip:port'.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthdGetInstanceByHashKeyResponse" # Same response schema
+            text/plain:
+              schema:
+                type: string
+                example: "127.0.0.1:7687"
+        '400': # If sandboxHashKey is missing
+          description: Invalid parameters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Sandbox not found or connection verification failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthdGetInstanceByHashKeyResponse" # Can also return partial record on verify fail
+            text/plain:
+              schema:
+                type: string # "Sandbox not found" or "Found sandbox, but no ip"
+        '417': # EXPECTATION_FAILED if no IP found after checks
+          description: Expectation Failed (e.g. sandbox found but no IP).
+          content:
+            text/plain:
+              schema:
+                type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxGetRunningInstancesForUser:
+    get:
+      summary: Get User's Running Instances
+      description: Retrieves details of all running sandbox instances for the authenticated user.
+      operationId: getRunningInstancesForUser
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: timezone
+          in: query
+          required: false
+          description: User's timezone for accurate expiration calculation (e.g., 'America/New_York').
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of the user's running sandbox instances.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunningInstances"
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxConditionalAddLead:
+    post:
+      summary: Add/Update Lead Information
+      description: Adds or updates lead information for the authenticated user based on marketing parameters.
+      operationId: conditionalAddLead
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddLeadRequest"
+      responses:
+        '200':
+          description: Lead status updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AddLeadResponse"
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxShare:
+    post:
+      summary: Share Sandbox
+      description: Invites another user to share one of the authenticated user's sandboxes.
+      operationId: shareSandbox
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareRequest"
+      responses:
+        '200':
+          description: Invitation successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareResponse"
+        default: # Consider specific error for failed share
+          description: Unexpected error or failed to share
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareResponse' # Or a more generic error
+  /SandboxShareAccept:
+    post:
+      summary: Accept Sandbox Share Invitation
+      description: Accepts an invitation to share a sandbox using an invitation token.
+      operationId: acceptSandboxShare
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareAcceptRequest"
+      responses:
+        '200':
+          description: Invitation accepted successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareAcceptResponse" # Define based on actual result
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxGetPendingInvitesForUser:
+    get:
+      summary: Get Pending Sent Invitations
+      description: Retrieves a list of pending sandbox invitations sent by the authenticated user.
+      operationId: getPendingInvitesForUser
+      security:
+        - Auth0Jwt: []
+      responses:
+        '200':
+          description: A list of pending invitations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingInvitesResponse"
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxBackup/request/{sandboxHashKey}:
+    post:
+      summary: Request Sandbox Backup
+      description: Initiates a backup process for a specific sandbox.
+      operationId: requestSandboxBackup
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: sandboxHashKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup task initiated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupTaskStatus"
+        '404':
+          description: Sandbox not found for the user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxBackup/result/{result_id}:
+    get:
+      summary: Get Sandbox Backup Result
+      description: Retrieves the result of a specific backup task.
+      operationId: getSandboxBackupResult
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: result_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Backup task status and result (if completed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupResultResponse"
+        '401':
+          description: Unauthorized to view this result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Backup task ID not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxBackup/{sandboxHashKey}: # GET and POST have different operations on the same path
+    get:
+      summary: List Sandbox Backups
+      description: Retrieves a list of available backups for a specific sandbox.
+      operationId: listSandboxBackups
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: sandboxHashKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of backup files.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupListResponse"
+        '404': # If no backups found or sandbox not found
+          description: No backups found or sandbox not accessible.
+          content:
+            application/json: # Returns empty array []
+              schema:
+                type: array
+                items: {}
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    post:
+      summary: Get Backup Download URL
+      description: Generates a pre-signed download URL for a specific backup file.
+      operationId: getBackupDownloadUrl
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: sandboxHashKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BackupDownloadUrlRequest"
+      responses:
+        '200':
+          description: Pre-signed download URL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupDownloadUrlResponse"
+        '403':
+          description: Forbidden to access the specified file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxAuraUpload/request/{sandboxHashKey}:
+    post:
+      summary: Request Sandbox to Aura Upload
+      description: Initiates an upload of a sandbox backup to an Aura instance.
+      operationId: requestAuraUpload
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: sandboxHashKey
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuraUploadRequest"
+      responses:
+        '200':
+          description: Aura upload task initiated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuraUploadTaskStatus"
+        '404':
+          description: Sandbox not found for the user.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '422': # UNPROCESSABLE_ENTITY
+          description: Missing Aura URI or password.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxAuraUpload/result/{result_id}:
+    get:
+      summary: Get Aura Upload Result
+      description: Retrieves the result of a specific Aura upload task.
+      operationId: getAuraUploadResult
+      security:
+        - Auth0Jwt: []
+      parameters:
+        - name: result_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Aura upload task status and result (if completed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuraUploadResultResponse"
+        '401':
+          description: Unauthorized to view this result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          description: Aura upload task ID not found.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxGetTraefikConfig:
+    get:
+      summary: Get Traefik Configuration
+      description: Retrieves the Traefik dynamic configuration for routing to active sandboxes.
+      operationId: getTraefikConfig
+      responses:
+        '200':
+          description: Traefik configuration in YAML format.
+          content:
+            application/x-yaml:
+              schema:
+                type: string # Representing YAML content
+        default:
+          description: Unexpected error
+          content:
+            application/json: # Assuming errors are still JSON
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxResendEmailVerification:
+    post:
+      summary: Resend Email Verification
+      description: Requests Auth0 to resend the email verification for the authenticated user.
+      operationId: resendEmailVerification
+      security:
+        - Auth0Jwt: []
+      responses:
+        '204':
+          description: Email verification sent successfully. No content.
+        '500':
+          description: An error occurred while trying to resend the verification email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxCreateGraphAcademyUser:
+    post:
+      summary: Create/Merge GraphAcademy User
+      description: Merges GraphAcademy user details for the authenticated user.
+      operationId: createGraphAcademyUser
+      security:
+        - Auth0Jwt: []
+      responses:
+        '200':
+          description: User details updated/merged successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphAcademyUserResponse"
+        '500':
+          description: Error updating user details.
+          content:
+            text/plain:
+              schema:
+                type: string
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxScheduleWorkshop:
+    post:
+      summary: Schedule Workshop (Slack)
+      description: Schedules a workshop, typically triggered via a Slack command. Expects application/x-www-form-urlencoded data.
+      operationId: scheduleWorkshop
+      # No Auth0Jwt as it's likely authenticated by Slack's own mechanisms.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/ScheduleWorkshopRequest"
+      responses:
+        '200':
+          description: Response for Slack indicating success or failure of scheduling.
+          content:
+            application/json: # Slack expects JSON
+              schema:
+                $ref: "#/components/schemas/ScheduleWorkshopResponse"
+        default: # Should also be a Slack-compatible response for errors
+          description: Unexpected error
+          content:
+            application/json:
+              schema: # Generic error for Slack
+                type: object
+                properties:
+                  response_type:
+                    type: string
+                    example: ephemeral
+                  text:
+                    type: string
+                    example: "An unexpected error occurred."
+  /SandboxSaveUserInfo:
+    post:
+      summary: Save User Information
+      description: Saves or updates user information (company, name) for the authenticated user.
+      operationId: saveUserInfo
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveUserInfoRequest"
+      responses:
+        '200':
+          description: User information saved successfully. Returns current user info.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfoResponse"
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxGetUserInfo:
+    get:
+      summary: Get User Information
+      description: Retrieves user information for the authenticated user.
+      operationId: getUserInfo
+      security:
+        - Auth0Jwt: []
+      responses:
+        '200':
+          description: User information.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserInfoResponse"
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxGenerateApiKey:
+    post:
+      summary: Generate API Key
+      description: Generates, saves (encrypted), and returns a new API key for the authenticated user.
+      operationId: generateApiKey
+      security:
+        - Auth0Jwt: []
+      responses:
+        '200':
+          description: API key generated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SandboxGenerateApiKeyResponse"
+        '401':
+          description: Unauthorized (if Auth0 token is invalid or missing).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error (e.g., KMS configuration issue, encryption failure, database save failure).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /SandboxRunQuery:
+    post:
+      summary: Run Cypher Query
+      description: Executes a Cypher query on a specified sandbox instance.
+      operationId: runQuery
+      security:
+        - Auth0Jwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunQueryRequest"
+      responses:
+        '200':
+          description: Query executed successfully. Returns query results.
+          content:
+            application/json:
+              schema:
+                type: object # Define based on expected query result structure
+                # Example: Will vary based on query
+                # properties:
+                #   records:
+                #     type: array
+                #     items:
+                #       type: object
+                #   summary:
+                #     type: object
+        '400':
+          description: Bad Request (e.g., missing hash_key or statement).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error' # Reusing generic error, or could be more specific
+        '404':
+          description: Sandbox not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          description: Unexpected error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+
+components:
+  securitySchemes:
+    Auth0Jwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Auth0 JWT for securing API endpoints.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        errorString:
+          type: string
+          description: A message describing the error.
+        status:
+          type: string
+          description: Status of the operation, usually FAILED or an error code.
+        message: # For general error messages
+          type: string
+    UseCase:
+      type: object
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        image:
+          type: string
+        enabled:
+          type: boolean
+        # Add other relevant use case properties
+    UseCases:
+      type: array
+      items:
+        $ref: '#/components/schemas/UseCase'
+    RunInstanceRequest:
+      type: object
+      required:
+        - usecase
+      properties:
+        usecase:
+          type: string
+          description: The name of the use case for the sandbox.
+        auth_token:
+          type: string
+          description: Optional authentication token for certain flows.
+        draft_only:
+          type: boolean
+          default: false
+          description: If true, only a draft record is created, and the instance is not deployed.
+        cease_emails:
+          type: boolean
+          default: false
+          description: If true, no emails will be sent regarding this sandbox.
+    SandboxInstanceDetails: # Base for various instance responses
+      type: object
+      properties:
+        sandboxHashKey:
+          type: string
+        status:
+          type: string
+          description: Current status of the sandbox (e.g., PENDING, RUNNING, STOPPED, FAILED, SandboxDraft).
+        password:
+          type: string
+          format: password
+          description: Password for the Neo4j instance (if applicable).
+        sbType:
+          type: string
+          description: Type of the sandbox (e.g., Sandbox, SandboxDraft).
+        usecase:
+          type: string
+        ip:
+          type: string
+          nullable: true
+        privip:
+          type: string
+          nullable: true
+        expires:
+          type: integer # Assuming epoch milliseconds
+          format: int64
+          nullable: true
+        hasExtended:
+          type: boolean
+          nullable: true
+        version:
+          type: integer
+          nullable: true
+        sandboxId:
+          type: integer
+          nullable: true
+    RunInstanceResponse:
+      allOf:
+        - $ref: '#/components/schemas/SandboxInstanceDetails'
+        - type: object
+          properties:
+            errorString: # For specific errors like "Sandbox already exists"
+              type: string
+              nullable: true
+    TwitterAuthResponse:
+      type: object
+      properties:
+        redirect_url:
+          type: string
+          format: url
+    TwitterExchangeResponse:
+      type: object
+      properties:
+        at:
+          type: object
+          properties:
+            key:
+              type: string
+            secret:
+              type: string
+    StopInstanceRequest:
+      type: object
+      required:
+        - sandboxHashKey
+      properties:
+        sandboxHashKey:
+          type: string
+    StopInstanceResponse: # Empty on success
+      type: object
+    ExtendRequest:
+      type: object
+      properties:
+        sandboxHashKey:
+          type: string
+          description: Specific sandbox to extend. If not provided, all user's sandboxes are extended.
+        email:
+          type: string
+          format: email
+          description: User's email, required if providing profile information.
+        company:
+          type: string
+        country:
+          type: string
+        industry:
+          type: string
+        telephone:
+          type: string
+        jobrole:
+          type: string
+        whyneo4j:
+          type: string
+    ExtendResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, FAIL]
+        extendedByDays:
+          type: integer
+        error:
+          type: string
+          nullable: true
+    AuthdGetInstanceByHashKeyResponse:
+      $ref: '#/components/schemas/SandboxInstanceDetails'
+    # SandboxGetInstanceByHashKeyResponse is the same as AuthdGetInstanceByHashKeyResponse
+    RunningInstances:
+      type: array
+      items:
+        $ref: '#/components/schemas/SandboxInstanceDetails'
+    AddLeadRequest:
+      type: object
+      properties:
+        marketoCookie:
+          type: string
+        utmCampaign:
+          type: string
+        utmSource:
+          type: string
+        utmMedium:
+          type: string
+        utmAdGroup:
+          type: string
+        utmTerm:
+          type: string
+        utmContent:
+          type: string
+        utmProgram:
+          type: string
+        utmOriginal:
+          type: string
+        gclid:
+          type: string
+    AddLeadResponse:
+      type: object
+      properties:
+        lead_status:
+          type: string
+    ShareRequest:
+      type: object
+      required:
+        - sandboxHashKey
+        - email
+        - message
+      properties:
+        sandboxHashKey:
+          type: string
+        email:
+          type: string
+        message:
+          type: string
+    ShareResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [SUCCESS, FAIL] # Assuming success or fail
+        token:
+          type: string
+          nullable: true
+        inviteEmail:
+          type: string
+        sandboxHashKey:
+          type: string
+    ShareAcceptRequest:
+      type: object
+      required:
+        - auth_token
+      properties:
+        auth_token:
+          type: string
+    ShareAcceptResponse: # Structure based on sblambda.sandbox.SandboxManager().accept_sandbox_invitation
+      type: object # Can be more specific if the exact structure is known
+      properties:
+        status: # Example, actual properties depend on the result
+          type: string
+    PendingInvite:
+      type: object
+      # Define properties of a pending invite object based on AuthHelper.get_pending_sent_invites
+      properties:
+        # Example properties, adjust based on actual data
+        token:
+          type: string
+        invite_email:
+          type: string
+          format: email
+        sandbox_hash_key:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PendingInvitesResponse:
+      type: array
+      items:
+        $ref: '#/components/schemas/PendingInvite'
+    BackupRequestPath:
+      type: object
+      properties:
+        sandboxHashKey:
+          type: string
+    BackupTaskStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The ID of the backup task.
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED] # Or other relevant statuses
+    BackupResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/BackupTaskStatus'
+        - type: object
+          properties:
+            result: # Present if status is SUCCESS
+              type: object # Define the structure of the backup result if known
+              properties:
+                # Example:
+                # file_key:
+                #   type: string
+                # file_size:
+                #   type: integer
+                pass: # From existing swagger, seems to be a boolean
+                  type: boolean
+            errorCode:
+              type: string
+              nullable: true
+    BackupListItem:
+      type: object
+      properties:
+        key:
+          type: string
+        size:
+          type: integer
+        LastModified:
+          type: string
+    BackupListResponse:
+      type: array
+      items:
+        $ref: '#/components/schemas/BackupListItem'
+    BackupDownloadUrlRequest:
+      type: object
+      required:
+        - key
+      properties:
+        key:
+          type: string
+          description: The S3 key of the backup file.
+    BackupDownloadUrlResponse:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+          format: url
+    AuraUploadRequest:
+      type: object
+      required:
+        - aura_uri
+        - aura_password
+      properties:
+        aura_uri:
+          type: string
+          description: The Aura instance URI.
+        aura_username:
+          type: string
+          default: 'neo4j'
+          description: Username for the Aura instance.
+        aura_password:
+          type: string
+          format: password
+          description: Password for the Aura instance.
+    AuraUploadTaskStatus: # Similar to BackupTaskStatus
+      $ref: '#/components/schemas/BackupTaskStatus'
+    AuraUploadResultResponse:
+      allOf:
+        - $ref: '#/components/schemas/AuraUploadTaskStatus'
+        - type: object
+          properties:
+            errorCode: # Specific to Aura upload failure
+              type: string
+              nullable: true
+    # Traefik config is YAML, not easily represented as a fixed schema
+    # ResendEmailVerificationResponse - 204 No Content, no schema needed for success
+    GraphAcademyUserResponse: # Based on AuthHelper.merge_graphacademy_user
+      type: object
+      properties:
+        # Define properties based on actual user details returned
+        # Example:
+        # auth0_key:
+        #   type: string
+        # email:
+        #   type: string
+        # graph_academy_profile_merged:
+        #   type: boolean
+        pass: # from existing schema
+          type: boolean
+    ScheduleWorkshopRequest: # application/x-www-form-urlencoded
+      type: object
+      properties:
+        text:
+          type: string
+          description: "Workshop details: [type] [no_seats] [start_time_utc] [end_time_utc]"
+        user_id:
+          type: string
+          description: Slack user ID of the requester.
+    ScheduleWorkshopResponse: # Slack response format
+      type: object
+      properties:
+        response_type:
+          type: string
+          enum: [in_channel, ephemeral]
+        text:
+          type: string
+    SaveUserInfoRequest:
+      type: object
+      properties:
+        user_metadata:
+          type: object # Can be more specific if structure is known
+          additionalProperties: true
+        company:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+    UserInfoResponse: # Structure from AuthHelper.get_user_details
+      type: object
+      properties:
+        # Define properties based on actual user details returned
+        # Examples:
+        # auth0_key:
+        #   type: string
+        # email:
+        #   type: string
+        # name:
+        #   type: string
+        # company:
+        #   type: string
+        # first_name:
+        #   type: string
+        # last_name:
+        #   type: string
+        api_key: # New property
+          type: string
+          nullable: true
+          description: The user's decrypted API key, if one exists and decryption is successful. Null otherwise.
+        pass: # from existing schema
+          type: boolean
+    RunQueryRequest:
+      type: object
+      required:
+        - hash_key
+        - statement
+      properties:
+        hash_key:
+          type: string
+          description: The hash key of the sandbox instance.
+        statement:
+          type: string
+          description: The Cypher query statement to execute.
+        params:
+          type: object
+          description: Optional parameters for the Cypher query.
+          additionalProperties: true
+        accessMode:
+          type: string
+          description: Access mode for the query. Defaults to "Write".
+          enum: [Read, Write]
+          default: Write
+    SandboxGenerateApiKeyResponse:
+      type: object
+      required:
+        - api_key
+      properties:
+        api_key:
+          type: string
+          description: The newly generated raw (unencrypted) API key. The user should save this securely.
+
+
+security:
+  - Auth0Jwt: []
