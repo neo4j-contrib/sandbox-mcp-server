@@ -2,8 +2,17 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, Field
 
 
+USECASE_DESCRIPTION = (
+    "The name of the use case for the sandbox, possible values are: "
+    "blank-sandbox,bloom,citations,contact-tracing,cybersecurity,entity-resolution,fincen,"
+    "fraud-detection,graph-data-science,graph-data-science-blank-sandbox,healthcare-analytics,"
+    "icij-offshoreleaks,icij-paradise-papers,legis-graph,movies,network-management,"
+    "openstreetmap,pole,recommendations,twitch,twitter-trolls,wwc2019,yelp,twitter-v2"
+)
+
+
 class StartSandboxBody(BaseModel):
-    usecase: Annotated[str, Field(description="The name of the use case for the sandbox (e.g., 'movies', 'blank').")]
+    usecase: Annotated[str, Field(description=USECASE_DESCRIPTION)]
 
 
 class StopSandboxBody(BaseModel):
@@ -12,12 +21,6 @@ class StopSandboxBody(BaseModel):
 
 class ExtendSandboxBody(BaseModel):
     sandbox_hash_key: Annotated[Optional[str], Field(description="Specific sandbox to extend. If None, all user's sandboxes are extended.")] = None
-
-
-class InviteCollaboratorsBody(BaseModel):
-    sandbox_hash_key: Annotated[str, Field(description="The unique hash key identifying the sandbox to share.")]
-    email: Annotated[str, Field(description="Email address of the user to invite.")]
-    message: Annotated[str, Field(description="A personal message to include in the invitation.")]
 
 
 class AuraUploadBody(BaseModel):
