@@ -1,0 +1,60 @@
+name: Deploy MCP Docker
+
+on:
+  push:
+    branches:
+      - main
+      - development
+
+jobs:
+  set_environment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up environment based on branch
+        id: environment_check
+        run: |
+          SIMPLE_REF=$(echo ${GITHUB_REF#refs/heads/} | tr / -)
+
+          echo "env_name=${SIMPLE_REF}" >> $GITHUB_OUTPUT
+
+    outputs:
+      env_name: ${{ steps.environment_check.outputs.env_name }}
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [set_environment]
+    permissions:
+      id-token: write
+      contents: read
+
+    environment:
+      name: ${{ needs.set_environment.outputs.env_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GH_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login into ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push docker image to Amazon ECR
+        working-directory: ./mcp-server
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          REPOSITORY: ${{ vars.MCP_ECR_REPOSITORY_NAME }}
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+      - name: Deploy to Amazon ECS
+        uses: brunocascio/ecs-deploy@v2.2.0
+        with:
+          args: deploy ${{ vars.MCP_ECS_CLUSTER }} ${{ vars.MCP_ECS_SERVICE }}
