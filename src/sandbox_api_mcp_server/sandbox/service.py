@@ -79,29 +79,23 @@ class SandboxApiClient:
             "sandboxes": await self._request("GET", "/SandboxGetRunningInstancesForUser", params=params),
         }
 
-    async def start_sandbox(self, usecase: str, cease_emails: Optional[bool] = None, draft_only: Optional[bool] = None, auth_token: Optional[str] = None) -> Dict[str, Any]:
+    async def start_sandbox(self, usecase: str) -> Dict[str, Any]:
         """
         Creates and deploys a new sandbox instance or returns an existing one if duplicates are not allowed and one exists.
         Corresponds to POST /SandboxRunInstance in swagger.
 
         Args:
-            usecase (str): The name of the use case for the sandbox.
-            cease_emails (Optional[bool]): If true, no emails will be sent regarding this sandbox. (default: false)
-            draft_only (Optional[bool]): If true, only a draft record is created, and the instance is not deployed. (default: false)
-            auth_token (Optional[str]): Optional authentication token for certain flows.
+            usecase (str): The name of the use case for the sandbox. Possible values are:
+                blank-sandbox,bloom,citations,contact-tracing,cybersecurity,entity-resolution,fincen,
+                fraud-detection,graph-data-science,graph-data-science-blank-sandbox,healthcare-analytics,
+                icij-offshoreleaks,icij-paradise-papers,legis-graph,movies,network-management,
+                openstreetmap,pole,recommendations,twitch,twitter-trolls,wwc2019,yelp,twitter-v2
 
         Returns:
             Dict[str, Any]: Sandbox instance details or draft confirmation.
                             See #/components/schemas/RunInstanceResponse in swagger.
         """
-        json_data: Dict[str, Any] = {"usecase": usecase}
-        if cease_emails is not None:
-            json_data["cease_emails"] = cease_emails
-        if draft_only is not None:
-            json_data["draft_only"] = draft_only
-        if auth_token is not None:
-            json_data["auth_token"] = auth_token
-        return await self._request("POST", "/SandboxRunInstance", json_data=json_data)
+        return await self._request("POST", "/SandboxRunInstance", json_data={"usecase": usecase})
 
     async def stop_sandbox(self, sandbox_hash_key: str) -> Optional[Dict[str, Any]]:
         """
@@ -118,24 +112,21 @@ class SandboxApiClient:
         json_data = {"sandboxHashKey": sandbox_hash_key}
         return await self._request("POST", "/SandboxStopInstance", json_data=json_data)
 
-    async def extend_sandbox(self, sandbox_hash_key: Optional[str] = None, profile_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def extend_sandbox(self, sandbox_hash_key: Optional[str] = None) -> Dict[str, Any]:
         """
         Extends the lifetime of a user's sandbox(es). User profile details can be submitted with this request.
         Corresponds to POST /SandboxExtend in swagger.
 
         Args:
             sandbox_hash_key (Optional[str]): Specific sandbox to extend. If not provided, all user's sandboxes are extended.
-            profile_data (Optional[Dict[str, Any]]): User profile information to submit.
-                Expected keys can include 'email', 'company', 'country', 'industry', 'telephone', 'jobrole', 'whyneo4j'.
-                See #/components/schemas/ExtendRequest in swagger.
 
         Returns:
             Dict[str, Any]: Sandbox lifetime extension status. See #/components/schemas/ExtendResponse.
         """
-        json_data = profile_data if profile_data is not None else {}
+        json_data: Dict[str, Any] = {}
         if sandbox_hash_key:
             json_data["sandboxHashKey"] = sandbox_hash_key
-        return await self._request("POST", "/SandboxExtend", json_data=json_data if json_data else {})
+        return await self._request("POST", "/SandboxExtend", json_data=json_data)
 
     async def get_sandbox_details(self, sandbox_hash_key: str, verify_connect: Optional[bool] = False) -> Dict[str, Any]:
         """
@@ -154,26 +145,6 @@ class SandboxApiClient:
         if verify_connect is not None:
             params["verifyConnect"] = verify_connect
         return await self._request("GET", "/SandboxAuthdGetInstanceByHashKey", params=params)
-
-    async def invite_collaborator(self, sandbox_hash_key: str, email: str, message: str) -> Dict[str, Any]:
-        """
-        Invites another user to share one of the authenticated user's sandboxes.
-        Corresponds to POST /SandboxShare in swagger.
-
-        Args:
-            sandbox_hash_key (str): The unique hash key identifying the sandbox to share.
-            email (str): Email address of the user to invite.
-            message (str): A personal message to include in the invitation.
-
-        Returns:
-            Dict[str, Any]: Invitation creation status. See #/components/schemas/ShareResponse.
-        """
-        json_data = {
-            "sandboxHashKey": sandbox_hash_key,
-            "email": email,
-            "message": message
-        }
-        return await self._request("POST", "/SandboxShare", json_data=json_data)
 
     async def request_backup(self, sandbox_hash_key: str) -> Dict[str, Any]:
         """
@@ -272,22 +243,22 @@ class SandboxApiClient:
         endpoint = f"/SandboxAuraUpload/result/{result_id}"
         return await self._request("GET", endpoint)
 
-    async def get_user_info(self) -> Dict[str, Any]:
-        """
-        Retrieves user information for the authenticated user.
-        Corresponds to GET /SandboxGetUserInfo in swagger.
-
-        Returns:
-            Dict[str, Any]: User information. See #/components/schemas/UserInfoResponse.
-        """
-        return await self._request("GET", "/SandboxGetUserInfo")
-
     async def get_schema(self, hash_key: str) -> FastApiReadCypherQueryResponse:
         """
         Retrieves the schema of the Neo4j database.
         Corresponds to POST /SandboxQuery in swagger.
         """
-        return await self.read_query(hash_key, "call apoc.meta.data() yield label, property, type, other, unique, index, elementType where elementType = 'node' and not label starts with '_' with label, collect(case when type <> 'RELATIONSHIP' then [property, type + case when unique then ' unique' else '' end + case when index then ' indexed' else '' end] end) as attributes, collect(case when type = 'RELATIONSHIP' then [property, head(other)] end) as relationships return label, apoc.map.fromPairs(attributes) as attributes, apoc.map.fromPairs(relationships) as relationships")
+        schema_query = (
+            "call apoc.meta.data() yield label, property, type, other, unique, index, elementType "
+            "where elementType = 'node' and not label starts with '_' "
+            "with label, collect(case when type <> 'RELATIONSHIP' "
+            "then [property, type + case when unique then ' unique' else '' end + "
+            "case when index then ' indexed' else '' end] end) as attributes, "
+            "collect(case when type = 'RELATIONSHIP' then [property, head(other)] end) as relationships "
+            "return label, apoc.map.fromPairs(attributes) as attributes, "
+            "apoc.map.fromPairs(relationships) as relationships"
+        )
+        return await self.read_query(hash_key, schema_query)
 
     async def read_query(self, hash_key: str, query: str, params: Optional[Dict[str, Any]] = None) -> FastApiReadCypherQueryResponse:
         """

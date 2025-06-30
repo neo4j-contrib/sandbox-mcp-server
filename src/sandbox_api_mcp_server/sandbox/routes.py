@@ -4,7 +4,7 @@ from fastapi import Depends
 from fastapi import Query, Path, status
 from fastapi.responses import PlainTextResponse
 
-from .models import StartSandboxBody, StopSandboxBody, ExtendSandboxBody, InviteCollaboratorsBody, AuraUploadBody, BackupDownloadUrlBody, FastApiReadCypherQueryBody, FastApiWriteCypherQueryBody
+from .models import StartSandboxBody, StopSandboxBody, ExtendSandboxBody, AuraUploadBody, BackupDownloadUrlBody, FastApiReadCypherQueryBody, FastApiWriteCypherQueryBody
 from helpers import get_logger
 from .service import call_sandbox_api, SandboxApiClient, get_sandbox_client
 
@@ -35,7 +35,7 @@ def get_sandbox_api_router() -> APIRouter:
     ):
         """Starts a new sandbox instance for a specified use case."""
         try:
-            return await call_sandbox_api("start_sandbox", client, usecase=body.usecase, cease_emails=body.cease_emails)
+            return await call_sandbox_api("start_sandbox", client, usecase=body.usecase)
         except Exception as e:
             logger.error(f"Error starting sandbox: {e}")
             raise e
@@ -59,7 +59,7 @@ def get_sandbox_api_router() -> APIRouter:
     ):
         """Extends the lifetime of a sandbox or all sandboxes for the user."""
         try:
-            return await call_sandbox_api("extend_sandbox", client, sandbox_hash_key=body.sandbox_hash_key, profile_data=body.profile_data)
+            return await call_sandbox_api("extend_sandbox", client, sandbox_hash_key=body.sandbox_hash_key)
         except Exception as e:
             logger.error(f"Error extending sandbox: {e}")
             raise e
@@ -76,31 +76,6 @@ def get_sandbox_api_router() -> APIRouter:
             return await call_sandbox_api("get_sandbox_details", client, sandbox_hash_key=sandbox_hash_key, verify_connect=verify_connect)
         except Exception as e:
             logger.error(f"Error getting sandbox details: {e}")
-            raise e
-
-    @router.post("/invite-collaborator", operation_id="invite_sandbox_collaborator", tags=["Sandbox"], response_model=Dict)
-    async def invite_collaborator(
-        body: InviteCollaboratorsBody,
-        client: Annotated[SandboxApiClient, Depends(get_sandbox_client)],
-    ):
-        """Invites a collaborator to a specific sandbox."""
-        try:
-            return await call_sandbox_api("invite_collaborator", client, sandbox_hash_key=body.sandbox_hash_key, email=body.email, message=body.message)
-        except Exception as e:
-            logger.error(f"Error inviting collaborator: {e}")
-            raise e
-
-    @router.get("/user-info", operation_id="get_user_information", tags=["User"], response_model=Dict)
-    async def get_user_info_ep(
-        client: Annotated[SandboxApiClient, Depends(get_sandbox_client)],
-    ):
-        """Retrieves user information for the authenticated user (from Sandbox API if needed, or use token data)."""
-        # This could either return user info from the token (user param) or call the Sandbox API
-        # return user # Example: return Auth0 user profile
-        try:
-            return await call_sandbox_api("get_user_info", client)
-        except Exception as e:
-            logger.error(f"Error getting user info: {e}")
             raise e
 
     # --- Backup Related Endpoints ---
@@ -161,7 +136,14 @@ def get_sandbox_api_router() -> APIRouter:
     ):
         """Uploads a sandbox backup to an Aura instance."""
         try:
-            return await call_sandbox_api("upload_to_aura", client, sandbox_hash_key=body.sandbox_hash_key, aura_uri=body.aura_uri, aura_password=body.aura_password, aura_username=body.aura_username)
+            return await call_sandbox_api(
+                "upload_to_aura",
+                client,
+                sandbox_hash_key=body.sandbox_hash_key,
+                aura_uri=body.aura_uri,
+                aura_password=body.aura_password,
+                aura_username=body.aura_username,
+            )
         except Exception as e:
             logger.error(f"Error uploading to Aura: {e}")
             raise e

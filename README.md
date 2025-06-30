@@ -133,7 +133,6 @@ The following tools are exposed, derived from the FastAPI application's endpoint
 - **Description**: Starts a new sandbox instance for a specified use case.
 - **Input**:
     - `usecase` (str): The name of the use case for the sandbox (e.g., 'movies', 'blank').
-    - `cease_emails` (Optional[bool], default: `False`): If true, no emails will be sent regarding this sandbox.
 - **Output**: `Dict` (JSON object representing the newly started sandbox)
 
 ---
@@ -150,7 +149,6 @@ The following tools are exposed, derived from the FastAPI application's endpoint
 - **Description**: Extends the lifetime of a sandbox or all sandboxes for the user.
 - **Input**:
     - `sandbox_hash_key` (Optional[str]): Specific sandbox to extend. If None, all user's sandboxes are extended.
-    - `profile_data` (Optional[Dict[str, Any]]): User profile information.
 - **Output**: `Dict` (JSON object with status of the extension)
 
 ---
@@ -161,23 +159,6 @@ The following tools are exposed, derived from the FastAPI application's endpoint
     - `sandbox_hash_key` (str, path parameter): The unique hash key identifying the sandbox.
     - `verify_connect` (Optional[bool], query parameter, default: `False`): If true, verifies connection to the sandbox.
 - **Output**: `Dict` (JSON object containing connection details for the sandbox)
-
----
-
-### `invite_sandbox_collaborator`
-- **Description**: Invites a collaborator to a specific sandbox.
-- **Input**:
-    - `sandbox_hash_key` (str): The unique hash key identifying the sandbox to share.
-    - `email` (str): Email address of the user to invite.
-    - `message` (str): A personal message to include in the invitation.
-- **Output**: `Dict` (JSON object with the status of the invitation)
-
----
-
-### `get_user_information`
-- **Description**: Retrieves user information for the authenticated user (from Sandbox API if needed, or use token data).
-- **Input**: None
-- **Output**: `Dict` (JSON object containing user information)
 
 ---
 

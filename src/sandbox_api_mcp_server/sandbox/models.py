@@ -1,10 +1,9 @@
-from typing import Annotated, Optional, Dict, Any
+from typing import Annotated, Optional, Any
 from pydantic import BaseModel, Field
 
 
 class StartSandboxBody(BaseModel):
     usecase: Annotated[str, Field(description="The name of the use case for the sandbox (e.g., 'movies', 'blank').")]
-    cease_emails: Annotated[Optional[bool], Field(description="If true, no emails will be sent regarding this sandbox.")] = False
 
 
 class StopSandboxBody(BaseModel):
@@ -13,7 +12,6 @@ class StopSandboxBody(BaseModel):
 
 class ExtendSandboxBody(BaseModel):
     sandbox_hash_key: Annotated[Optional[str], Field(description="Specific sandbox to extend. If None, all user's sandboxes are extended.")] = None
-    profile_data: Annotated[Optional[Dict[str, Any]], Field(description="User profile information.")] = None
 
 
 class InviteCollaboratorsBody(BaseModel):
