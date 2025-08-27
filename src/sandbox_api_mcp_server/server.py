@@ -7,6 +7,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import AuthConfig, FastApiMCP
 from uvicorn._types import ASGI3Application, ASGIReceiveCallable, ASGISendCallable, Scope
+from starlette.middleware.base import BaseHTTPMiddleware
 from auth import fetch_jwks_public_key, verify_auth
 from models import Auth0Settings
 from sandbox.routes import get_sandbox_api_router
@@ -60,6 +61,16 @@ class ProxyHeadersMiddleware:
         return await self.app(scope, receive, send)
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # Clickjacking protection
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        # Prevent MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+
 def run():
     app = FastAPI(title="SandboxApiMCP", lifespan=lifespan)
     app.include_router(get_sandbox_api_router())
@@ -71,6 +82,7 @@ def run():
         allow_headers=["*"],
     )
     app.add_middleware(ProxyHeadersMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     fastapi_mcp = FastApiMCP(
         app,
         name="Neo4j Sandbox API MCP Server",
