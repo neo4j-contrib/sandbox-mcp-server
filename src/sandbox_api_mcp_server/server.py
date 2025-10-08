@@ -126,14 +126,12 @@ def run():
     )
 
     # Mount MCP transports - support both for maximum compatibility
-
-    # SSE transport for backward compatibility with existing clients
     sse_app = mcp.sse_app()
     app.mount("/sse", sse_app)
 
-    # Streamable HTTP transport for modern clients (recommended for production)
-    streamable_app = mcp.streamable_http_app()
-    app.mount("/mcp", streamable_app)
+    # HTTP transport for modern clients (recommended for production)
+    http_app = mcp.http_app()
+    app.mount("", http_app)
 
     logger.info("MCP server available at multiple transports:")
     logger.info("  - /sse (SSE transport - legacy, backward compatible)")
