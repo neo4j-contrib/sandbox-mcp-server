@@ -1,0 +1,25 @@
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "src/sandbox_api_mcp_server/server.py",
+    "entrypoint": "mcp"
+  },
+  "environment": {
+    "python": ">=3.10",
+    "dependencies": [
+      "fastmcp>=2.12.4",
+      "fastapi",
+      "httpx>=0.28.1",
+      "PyJWT>=2.10.1",
+      "python-dotenv>=1.1.0",
+      "pydantic>=2.11.4",
+      "uvicorn>=0.30.0",
+      "cryptography~=45.0.0"
+    ]
+  },
+  "deployment": {
+    "transport": "http",
+    "port": 9100
+  }
+}
+

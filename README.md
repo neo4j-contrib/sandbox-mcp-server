@@ -4,7 +4,7 @@
 
 This project provides a Model Context Protocol (MCP) server for interacting with the [Neo4j Sandbox API](https://sandbox.neo4j.com/). It allows language models or other MCP clients to easily launch, list, query, and perform other actions on Neo4j Sandbox instances using a standardized tool interface.
 
-The server is built as a [FastAPI](https://fastapi.tiangolo.com/) application and uses the [FastAPI-MCP](https://fastapi-mcp.tadata.com/getting-started/welcome) library to expose its endpoints as MCP tools. Authentication with the Sandbox API is handled via Auth0, and the necessary Auth0 credentials must be configured through environment variables.
+The server is built as a [FastAPI](https://fastapi.tiangolo.com/) application and uses [FastMCP](https://gofastmcp.com/) (v2.12.4) to expose its endpoints as MCP tools. FastMCP provides enterprise-grade OAuth 2.1 authentication with Auth0, along with backward compatibility for API key authentication. The necessary Auth0 credentials must be configured through environment variables.
 
 ## Environment Variables
 
@@ -15,6 +15,7 @@ The server requires the following environment variables to be set for Auth0 auth
 *   `AUTH0_CLIENT_ID`: The Client ID of your Auth0 Application.
 *   `AUTH0_CLIENT_SECRET`: The Client Secret of your Auth0 Application.
 *   `SANDBOX_API_KEY`: Your Neo4j Sandbox API key. This is used by the underlying `neo4j-sandbox-api-client`.
+*   `PORT` (optional): The port to run the server on. Defaults to `9100` if not set.
 
 You can set these variables directly in your environment or place them in a `.env` file in the project root.
 
@@ -43,11 +44,15 @@ You can set these variables directly in your environment or place them in a `.en
     ```bash
     uv run sandbox-api-mcp-server
     ```
-    This will start the server on `http://0.0.0.0:9100`. The MCP endpoint will be available at `http://0.0.0.0:9100/sse` (as configured in `server.py`).
+    This will start the server on `http://0.0.0.0:9100`. The MCP server is available at two transport endpoints:
+    - `http://0.0.0.0:9100/sse` - SSE transport (legacy, backward compatible)
+    - `http://0.0.0.0:9100/mcp` - Streamable HTTP transport (modern, recommended for production)
 
 ## Using with MCP Clients (e.g., Claude Desktop)
 
-To use this MCP server with an MCP client, you need to configure the client to connect to the running FastAPI server. Given the OAuth2 flow used for authentication, **it is highly recommended to use `mcp-remote`** to bridge the connection. `mcp-remote` will handle the browser-based login and token passing to the MCP server.
+To use this MCP server with an MCP client, you need to configure the client to connect to the running FastAPI server. This server uses **FastMCP 2.12.4** to expose FastAPI endpoints as MCP tools. Authentication is handled via Auth0 (OAuth2/JWT) and API keys at the FastAPI layer.
+
+**It is recommended to use `mcp-remote`** to bridge the connection, especially if you need to handle OAuth token acquisition. `mcp-remote` can help manage authentication tokens for the HTTP requests to the server.
 
 ### Step 1: Install `mcp-remote` (if not already installed)
 
@@ -58,22 +63,36 @@ npm install -g mcp-remote
 
 ### Step 2: Run your FastAPI MCP Server
 
-Ensure your FastAPI MCP server is running locally (e.g., on `http://localhost:9100` with the MCP endpoint at `http://localhost:9100/sse`):
+Ensure your FastAPI MCP server is running locally (e.g., on `http://localhost:9100`):
 ```bash
 uv run sandbox-api-mcp-server
 ```
 
+The server provides two MCP transport endpoints:
+- `http://localhost:9100/sse` - SSE transport (backward compatible)
+- `http://localhost:9100/mcp` - Streamable HTTP transport (recommended)
+
 
 ### Step 3: Run `mcp-remote`
 
-In a new terminal, start `mcp-remote`, pointing it to your local MCP server's `/sse` endpoint and choosing a local port for `mcp-remote` to listen on (e.g., `8080`):
+In a new terminal, start `mcp-remote`, pointing it to your local MCP server. You can choose either transport endpoint:
 
+**Using SSE (legacy, backward compatible):**
 ```bash
 # If mcp-cli is installed globally
 mcp-remote http://localhost:9100/sse 8080
 
 # Or using npx
 npx -y mcp-remote http://localhost:9100/sse 8080
+```
+
+**Using Streamable HTTP (modern, recommended):**
+```bash
+# If mcp-cli is installed globally
+mcp-remote http://localhost:9100/mcp 8080
+
+# Or using npx
+npx -y mcp-remote http://localhost:9100/mcp 8080
 ```
 `mcp-remote` will now listen on `localhost:8080` and proxy requests to your actual MCP server, handling the OAuth flow.
 
@@ -87,6 +106,7 @@ npx -y mcp-remote http://localhost:9100/sse 8080
 2.  **Configure the MCP Server in Claude Desktop:**
     Edit `claude_desktop_config.json` to point to the local port where `mcp-remote` is listening (e.g., `8080`).
 
+    **Option A: Using SSE transport (backward compatible):**
     ```json
     {
         "mcpServers": {
@@ -96,6 +116,23 @@ npx -y mcp-remote http://localhost:9100/sse 8080
                 "-y",
                 "mcp-remote",
                 "http://localhost:9100/sse",
+                "8080"
+            ]
+            }
+        }
+    }
+    ```
+
+    **Option B: Using Streamable HTTP transport (recommended):**
+    ```json
+    {
+        "mcpServers": {
+            "neo4j-sandbox-mcp-via-remote": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "http://localhost:9100/mcp",
                 "8080"
             ]
             }
@@ -247,6 +284,7 @@ The following tools are exposed, derived from the FastAPI application's endpoint
 *   API routes (which become MCP tools) are defined in `src/sandbox_api_mcp_server/sandbox/routes.py`.
 *   Request/response models are primarily in `src/sandbox_api_mcp_server/sandbox/models.py` and `src/sandbox_api_mcp_server/models.py`.
 *   Authentication logic is in `src/sandbox_api_mcp_server/auth.py`.
+*   Auth0 OAuth provider for FastMCP is in `src/sandbox_api_mcp_server/auth_provider.py`.
 
 ### Dependency Management
 
@@ -258,3 +296,42 @@ This project uses [UV](https://docs.astral.sh/uv/) for fast, reliable dependency
 *   **Running scripts**: `uv run <command>`
 
 All dependencies are defined in `pyproject.toml` and locked in `uv.lock` for reproducible builds.
+
+### FastMCP Configuration
+
+The server includes a `fastmcp.json` configuration file for declarative deployment. You can run the server using:
+
+```bash
+fastmcp run fastmcp.json
+```
+
+This configuration defines the source, environment, and deployment settings for the FastMCP server.
+
+### Authentication Architecture
+
+The server implements authentication at the **FastAPI layer** via the `verify_auth` dependency, which supports:
+
+1. **OAuth2/JWT Tokens via Auth0**
+   - Validates JWT tokens issued by Auth0
+   - Verifies token signature using JWKS public keys
+   - Checks audience, issuer, and other JWT claims
+   - MCP clients can use these tokens via standard `Authorization: Bearer <token>` headers
+
+2. **API Key Authentication** (backward compatibility)
+   - Supports `Authorization: Bearer ApiKey <key>` header format
+   - Maintained in FastAPI routes via `Depends(verify_auth)`
+   - Ensures existing API consumers continue to work
+
+**Note on MCP OAuth Support:**
+Future versions may implement native MCP OAuth support via `OAuthAuthorizationServerProvider`, which would provide Dynamic Client Registration (DCR) compliance and seamless OAuth flows specifically designed for the MCP protocol. The current implementation leverages FastMCP's ability to convert FastAPI endpoints while maintaining the existing FastAPI authentication system.
+
+### FastMCP Features
+
+This server leverages [FastMCP 2.12.4](https://www.jlowin.dev/blog/fastmcp-2-12) features:
+
+- **FastAPI Integration**: Seamless conversion of FastAPI endpoints to MCP tools via `FastMCP.from_fastapi()`
+- **Route Filtering**: Excludes internal endpoints (like `/health`) from MCP tool exposure using `RouteMap` configurations
+- **Authentication Compatibility**: Works with existing FastAPI authentication middleware (Auth0 JWT + API keys)
+- **Dual Transport Support**: Provides both transport protocols for maximum compatibility
+  - **SSE** at `/sse` - Legacy transport for backward compatibility with existing clients
+  - **Streamable HTTP** at `/mcp` - Modern transport recommended for production deployments

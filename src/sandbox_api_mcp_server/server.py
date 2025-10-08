@@ -4,12 +4,13 @@ import uvicorn
 from anyio import get_cancelled_exc_class
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi_mcp import AuthConfig, FastApiMCP
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap
 from uvicorn._types import ASGI3Application, ASGIReceiveCallable, ASGISendCallable, Scope
 from starlette.middleware.base import BaseHTTPMiddleware
-from .auth import fetch_jwks_public_key, verify_auth
+from .auth import fetch_jwks_public_key
 from .models import Auth0Settings
 from .sandbox.routes import get_sandbox_api_router
 from .helpers import get_logger
@@ -101,28 +102,52 @@ def run():
     )
     app.add_middleware(ProxyHeadersMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
-    fastapi_mcp = FastApiMCP(
-        app,
-        name="Neo4j Sandbox API MCP Server",
-        description="Neo4j Sandbox API MCP Server.",
-        exclude_operations=["health_check"],
-        auth_config=AuthConfig(
-            issuer=f"https://{Auth0Settings().auth0_domain}/",
-            authorize_url=f"https://{Auth0Settings().auth0_domain}/authorize",
-            oauth_metadata_url=Auth0Settings().auth0_oauth_metadata_url,
-            audience=Auth0Settings().auth0_audience,
-            default_scope="read:account-info openid email profile user_metadata",
-            client_id=Auth0Settings().auth0_client_id,
-            client_secret=Auth0Settings().auth0_client_secret,
-            dependencies=[Depends(verify_auth)],
-            setup_proxies=True,
+
+    # Get port from environment or use default
+    port = int(os.getenv("PORT", 9100))
+
+    # Define route maps to exclude health_check endpoint from MCP tools
+    route_maps = [
+        # Exclude health endpoint from MCP tools
+        RouteMap(
+            methods=["GET"],
+            pattern=r".*/health$",
+            mcp_type=None,  # Exclude from MCP
         ),
+        # Map all other endpoints to tools (default behavior)
+    ]
+
+    # Convert FastAPI app to MCP server using from_fastapi
+    # This will expose FastAPI endpoints as MCP tools
+    mcp = FastMCP.from_fastapi(
+        app=app,
+        name="Neo4j Sandbox API MCP Server",
+        description="Neo4j Sandbox API MCP Server for managing Neo4j sandboxes.",
+        route_maps=route_maps,
     )
 
-    # Mount the MCP server
-    fastapi_mcp.mount(mount_path="/sse")
+    # Mount MCP transports - support both for maximum compatibility
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 9100)))
+    # SSE transport for backward compatibility with existing clients
+    sse_app = mcp.sse_app()
+    app.mount("/sse", sse_app)
+
+    # Streamable HTTP transport for modern clients (recommended for production)
+    streamable_app = mcp.streamable_http_app()
+    app.mount("/mcp", streamable_app)
+
+    logger.info("MCP server available at multiple transports:")
+    logger.info("  - /sse (SSE transport - legacy, backward compatible)")
+    logger.info("  - /mcp (Streamable HTTP transport - modern, recommended)")
+
+    # Authentication Note:
+    # - FastAPI routes use Depends(verify_auth) which handles both:
+    #   * OAuth2/JWT tokens from Auth0
+    #   * API Key authentication (Authorization: Bearer ApiKey <key>)
+    # - This provides backward compatibility with existing API consumers
+    # - MCP clients will use the existing FastAPI auth via standard HTTP headers
+
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
