@@ -91,7 +91,49 @@ def close_on_double_start(app):
 
 
 def run():
-    app = FastAPI(title="SandboxApiMCP", lifespan=lifespan)
+    """
+    Run the FastAPI server with MCP integration.
+
+    IMPORTANT: This uses a combined lifespan approach because http_app() requires
+    its lifespan to be run to initialize the task group. Simply mounting http_app
+    on a FastAPI app will NOT work - you MUST combine the lifespans.
+
+    See: https://gofastmcp.com/integrations/asgi#asgi-starlette-fastmcp
+    """
+    port = int(os.getenv("PORT", 9100))
+
+    # Step 1: Create temporary FastAPI app for MCP conversion
+    temp_app = FastAPI(title="SandboxApiMCP")
+    temp_app.include_router(get_sandbox_api_router())
+
+    route_maps = [
+        # Exclude health endpoint from MCP tools
+        RouteMap(
+            methods=["GET"],
+            pattern=r".*/health$",
+            mcp_type=MCPType.EXCLUDE,  # Exclude from MCP
+        ),
+    ]
+
+    # Step 2: Convert to MCP and get http_app
+    mcp = FastMCP.from_fastapi(
+        app=temp_app,
+        name="Neo4j Sandbox API MCP Server",
+        route_maps=route_maps,
+    )
+    http_app = mcp.http_app()
+
+    # Step 3: Create combined lifespan
+    @asynccontextmanager
+    async def combined_lifespan(app: FastAPI):
+        # Initialize JWKS public key
+        app.state.jwks_public_key = await fetch_jwks_public_key(Auth0Settings().auth0_jwks_url)
+        # Run MCP app lifespan (required for task group initialization)
+        async with http_app.lifespan(app):
+            yield
+
+    # Step 4: Create final FastAPI app with combined lifespan
+    app = FastAPI(title="SandboxApiMCP", lifespan=combined_lifespan)
     app.include_router(get_sandbox_api_router())
     app.add_middleware(
         CORSMiddleware,
@@ -103,39 +145,11 @@ def run():
     app.add_middleware(ProxyHeadersMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # Get port from environment or use default
-    port = int(os.getenv("PORT", 9100))
-
-    # Define route maps to exclude health_check endpoint from MCP tools
-    route_maps = [
-        # Exclude health endpoint from MCP tools
-        RouteMap(
-            methods=["GET"],
-            pattern=r".*/health$",
-            mcp_type=MCPType.EXCLUDE,  # Exclude from MCP
-        ),
-        # Map all other endpoints to tools (default behavior)
-    ]
-
-    # Convert FastAPI app to MCP server using from_fastapi
-    # This will expose FastAPI endpoints as MCP tools
-    mcp = FastMCP.from_fastapi(
-        app=app,
-        name="Neo4j Sandbox API MCP Server",
-        route_maps=route_maps,
-    )
-
-    # Mount MCP transports - support both for maximum compatibility
-    sse_app = mcp.sse_app()
-    app.mount("/sse", sse_app)
-
-    # HTTP transport for modern clients (recommended for production)
-    http_app = mcp.http_app()
+    # Step 5: Mount HTTP app at root
     app.mount("", http_app)
 
-    logger.info("MCP server available at multiple transports:")
-    logger.info("  - /sse (SSE transport - legacy, backward compatible)")
-    logger.info("  - /mcp (Streamable HTTP transport - modern, recommended)")
+    logger.info("MCP server available at:")
+    logger.info("  - /mcp (HTTP transport)")
 
     # Authentication Note:
     # - FastAPI routes use Depends(verify_auth) which handles both:
