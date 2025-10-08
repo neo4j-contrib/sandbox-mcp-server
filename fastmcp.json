@@ -7,14 +7,14 @@
   "environment": {
     "python": ">=3.10",
     "dependencies": [
+      "cryptography~=45.0.0",
+      "fastapi>=0.115.0",
       "fastmcp>=2.12.4",
-      "fastapi",
       "httpx>=0.28.1",
       "PyJWT>=2.10.1",
       "python-dotenv>=1.1.0",
       "pydantic>=2.11.4",
-      "uvicorn>=0.30.0",
-      "cryptography~=45.0.0"
+      "uvicorn>=0.30.0"
     ]
   },
   "deployment": {

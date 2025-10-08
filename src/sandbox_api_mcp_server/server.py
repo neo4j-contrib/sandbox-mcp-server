@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap
+from fastmcp.server.openapi import RouteMap, MCPType
 from uvicorn._types import ASGI3Application, ASGIReceiveCallable, ASGISendCallable, Scope
 from starlette.middleware.base import BaseHTTPMiddleware
 from .auth import fetch_jwks_public_key
@@ -112,7 +112,7 @@ def run():
         RouteMap(
             methods=["GET"],
             pattern=r".*/health$",
-            mcp_type=None,  # Exclude from MCP
+            mcp_type=MCPType.EXCLUDE,  # Exclude from MCP
         ),
         # Map all other endpoints to tools (default behavior)
     ]
@@ -122,7 +122,6 @@ def run():
     mcp = FastMCP.from_fastapi(
         app=app,
         name="Neo4j Sandbox API MCP Server",
-        description="Neo4j Sandbox API MCP Server for managing Neo4j sandboxes.",
         route_maps=route_maps,
     )
 
