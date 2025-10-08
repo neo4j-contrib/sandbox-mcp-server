@@ -5,7 +5,7 @@ from fastapi import Query, Path, status
 from fastapi.responses import PlainTextResponse
 
 from .models import StartSandboxBody, StopSandboxBody, ExtendSandboxBody, AuraUploadBody, BackupDownloadUrlBody, FastApiReadCypherQueryBody, FastApiWriteCypherQueryBody
-from helpers import get_logger
+from ..helpers import get_logger
 from .service import call_sandbox_api, SandboxApiClient, get_sandbox_client
 
 logger = get_logger(__name__)

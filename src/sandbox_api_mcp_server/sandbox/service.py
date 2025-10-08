@@ -5,8 +5,8 @@ import random
 from typing import Annotated, Optional, Dict, Any
 from fastapi import HTTPException, status, Depends
 
-from auth import verify_auth
-from helpers import get_logger
+from ..auth import verify_auth
+from ..helpers import get_logger
 from .models import FastApiReadCypherQueryResponse
 
 MAX_RETRIES = 3

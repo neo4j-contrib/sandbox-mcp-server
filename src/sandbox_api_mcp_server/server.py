@@ -1,17 +1,20 @@
 import os
 import uvicorn
 
+from anyio import get_cancelled_exc_class
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi_mcp import AuthConfig, FastApiMCP
+from fastapi.responses import RedirectResponse
+from fastmcp import FastMCP
+from fastmcp.server.openapi import RouteMap, MCPType
 from uvicorn._types import ASGI3Application, ASGIReceiveCallable, ASGISendCallable, Scope
 from starlette.middleware.base import BaseHTTPMiddleware
-from auth import fetch_jwks_public_key, verify_auth
-from models import Auth0Settings
-from sandbox.routes import get_sandbox_api_router
-from helpers import get_logger
+from .auth import fetch_jwks_public_key
+from .models import Auth0Settings
+from .sandbox.routes import get_sandbox_api_router
+from .helpers import get_logger
 
 logger = get_logger(__name__)
 
@@ -71,8 +74,70 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def close_on_double_start(app):
+    async def wrapped(scope, receive, send):
+        start_sent = False
+
+        async def check_send(message):
+            nonlocal start_sent
+            if message["type"] == "http.response.start":
+                if start_sent:
+                    raise get_cancelled_exc_class()()
+                start_sent = True
+            await send(message)
+
+        await app(scope, receive, check_send)
+
+    return wrapped
+
+
 def run():
-    app = FastAPI(title="SandboxApiMCP", lifespan=lifespan)
+    """
+    Run the FastAPI server with MCP integration.
+
+    IMPORTANT: This uses a combined lifespan approach because http_app() requires
+    its lifespan to be run to initialize the task group. Simply mounting http_app
+    on a FastAPI app will NOT work - you MUST combine the lifespans.
+
+    See: https://gofastmcp.com/integrations/asgi#asgi-starlette-fastmcp
+    """
+    port = int(os.getenv("PORT", 9100))
+
+    # Step 1: Create temporary FastAPI app for MCP conversion
+    temp_app = FastAPI(title="SandboxApiMCP")
+    temp_app.include_router(get_sandbox_api_router())
+
+    route_maps = [
+        # Exclude health endpoint from MCP tools
+        RouteMap(
+            methods=["GET"],
+            pattern=r".*/health$",
+            mcp_type=MCPType.EXCLUDE,  # Exclude from MCP
+        ),
+    ]
+
+    # Step 2: Convert to MCP and get both transport apps
+    mcp = FastMCP.from_fastapi(
+        app=temp_app,
+        name="Neo4j Sandbox API MCP Server",
+        route_maps=route_maps,
+    )
+
+    # Get both transport apps
+    sse_app = mcp.sse_app()  # For backward compatibility
+    http_app = mcp.http_app()  # Modern transport
+
+    # Step 3: Create combined lifespan
+    @asynccontextmanager
+    async def combined_lifespan(app: FastAPI):
+        # Initialize JWKS public key
+        app.state.jwks_public_key = await fetch_jwks_public_key(Auth0Settings().auth0_jwks_url)
+        # Run MCP app lifespan (required for task group initialization)
+        async with http_app.lifespan(app):
+            yield
+
+    # Step 4: Create final FastAPI app with combined lifespan
+    app = FastAPI(title="SandboxApiMCP", lifespan=combined_lifespan)
     app.include_router(get_sandbox_api_router())
     app.add_middleware(
         CORSMiddleware,
@@ -83,28 +148,31 @@ def run():
     )
     app.add_middleware(ProxyHeadersMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
-    fastapi_mcp = FastApiMCP(
-        app,
-        name="Neo4j Sandbox API MCP Server",
-        description="Neo4j Sandbox API MCP Server.",
-        exclude_operations=["health_check"],
-        auth_config=AuthConfig(
-            issuer=f"https://{Auth0Settings().auth0_domain}/",
-            authorize_url=f"https://{Auth0Settings().auth0_domain}/authorize",
-            oauth_metadata_url=Auth0Settings().auth0_oauth_metadata_url,
-            audience=Auth0Settings().auth0_audience,
-            default_scope="read:account-info openid email profile user_metadata",
-            client_id=Auth0Settings().auth0_client_id,
-            client_secret=Auth0Settings().auth0_client_secret,
-            dependencies=[Depends(verify_auth)],
-            setup_proxies=True,
-        ),
-    )
 
-    # Mount the MCP server
-    fastapi_mcp.mount(mount_path="/sse")
+    # Step 5: Mount both transports for maximum compatibility
+    # SSE app mounted at /sse creates routes at /sse/sse
+    # To maintain backward compatibility, add a redirect from /sse to /sse/sse
+    @app.get("/sse")
+    async def sse_redirect():
+        """Redirect /sse to /sse/sse for backward compatibility"""
+        return RedirectResponse(url="/sse/sse", status_code=307)
 
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 9100)))
+    app.mount("/sse", sse_app)
+    # HTTP at root (exposes /mcp endpoint) for modern clients
+    app.mount("", http_app)
+
+    logger.info("MCP server available at multiple transports:")
+    logger.info("  - /sse → /sse (SSE transport - backward compatible)")
+    logger.info("  - /mcp (HTTP transport - modern, recommended)")
+
+    # Authentication Note:
+    # - FastAPI routes use Depends(verify_auth) which handles both:
+    #   * OAuth2/JWT tokens from Auth0
+    #   * API Key authentication (Authorization: Bearer ApiKey <key>)
+    # - This provides backward compatibility with existing API consumers
+    # - MCP clients will use the existing FastAPI auth via standard HTTP headers
+
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 if __name__ == "__main__":
