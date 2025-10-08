@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastmcp import FastMCP
 from fastmcp.server.openapi import RouteMap, MCPType
 from uvicorn._types import ASGI3Application, ASGIReceiveCallable, ASGISendCallable, Scope
@@ -115,13 +116,16 @@ def run():
         ),
     ]
 
-    # Step 2: Convert to MCP and get http_app
+    # Step 2: Convert to MCP and get both transport apps
     mcp = FastMCP.from_fastapi(
         app=temp_app,
         name="Neo4j Sandbox API MCP Server",
         route_maps=route_maps,
     )
-    http_app = mcp.http_app()
+
+    # Get both transport apps
+    sse_app = mcp.sse_app()  # For backward compatibility
+    http_app = mcp.http_app()  # Modern transport
 
     # Step 3: Create combined lifespan
     @asynccontextmanager
@@ -145,11 +149,21 @@ def run():
     app.add_middleware(ProxyHeadersMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # Step 5: Mount HTTP app at root
+    # Step 5: Mount both transports for maximum compatibility
+    # SSE app mounted at /sse creates routes at /sse/sse
+    # To maintain backward compatibility, add a redirect from /sse to /sse/sse
+    @app.get("/sse")
+    async def sse_redirect():
+        """Redirect /sse to /sse/sse for backward compatibility"""
+        return RedirectResponse(url="/sse/sse", status_code=307)
+
+    app.mount("/sse", sse_app)
+    # HTTP at root (exposes /mcp endpoint) for modern clients
     app.mount("", http_app)
 
-    logger.info("MCP server available at:")
-    logger.info("  - /mcp (HTTP transport)")
+    logger.info("MCP server available at multiple transports:")
+    logger.info("  - /sse → /sse (SSE transport - backward compatible)")
+    logger.info("  - /mcp (HTTP transport - modern, recommended)")
 
     # Authentication Note:
     # - FastAPI routes use Depends(verify_auth) which handles both:
