@@ -2,11 +2,11 @@ import httpx
 import json
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from cryptography.hazmat.primitives import serialization
-from helpers import get_logger
+from .helpers import get_logger
 from jwt.algorithms import RSAAlgorithm
 from fastapi import Request, HTTPException, status
 from typing import Any
-from models import Auth0Settings
+from .models import Auth0Settings
 
 logger = get_logger(__name__)
 

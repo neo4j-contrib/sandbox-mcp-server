@@ -1,8 +1,9 @@
-FROM python:3.12-slim
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 ADD . /app
 WORKDIR /app
 
-RUN pip install -r requirements.txt
+# Install dependencies using UV
+RUN uv sync --frozen --no-dev
 
-CMD ["python", "src/sandbox_api_mcp_server/server.py"]
+CMD ["uv", "run", "sandbox-api-mcp-server"]

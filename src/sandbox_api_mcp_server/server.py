@@ -1,6 +1,7 @@
 import os
 import uvicorn
 
+from anyio import get_cancelled_exc_class
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
@@ -8,10 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_mcp import AuthConfig, FastApiMCP
 from uvicorn._types import ASGI3Application, ASGIReceiveCallable, ASGISendCallable, Scope
 from starlette.middleware.base import BaseHTTPMiddleware
-from auth import fetch_jwks_public_key, verify_auth
-from models import Auth0Settings
-from sandbox.routes import get_sandbox_api_router
-from helpers import get_logger
+from .auth import fetch_jwks_public_key, verify_auth
+from .models import Auth0Settings
+from .sandbox.routes import get_sandbox_api_router
+from .helpers import get_logger
 
 logger = get_logger(__name__)
 
@@ -69,6 +70,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Prevent MIME type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
+
+
+def close_on_double_start(app):
+    async def wrapped(scope, receive, send):
+        start_sent = False
+
+        async def check_send(message):
+            nonlocal start_sent
+            if message["type"] == "http.response.start":
+                if start_sent:
+                    raise get_cancelled_exc_class()()
+                start_sent = True
+            await send(message)
+
+        await app(scope, receive, check_send)
+
+    return wrapped
 
 
 def run():

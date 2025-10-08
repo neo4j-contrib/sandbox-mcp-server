@@ -20,29 +20,30 @@ You can set these variables directly in your environment or place them in a `.en
 
 ## Running the Server
 
-1.  **Install dependencies:**
-    It's recommended to use a virtual environment.
+1.  **Install UV (if not already installed):**
     ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # On Windows use `.venv\\Scripts\\activate`
-    pip install -r requirements.txt
-    # Or using uv
-    # uv pip install -r requirements.txt
+    # macOS/Linux
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Windows
+    powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
     ```
 
-2.  **Set environment variables:**
-    Ensure the `.env` file is present in the `mcp-server` directory and populated with your Auth0 and Sandbox API credentials as described above.
+2.  **Install dependencies:**
+    UV will automatically create a virtual environment and install dependencies:
+    ```bash
+    uv sync
+    ```
 
-3.  **Run the FastAPI application:**
-    The server can be started using Uvicorn:
+3.  **Set environment variables:**
+    Ensure the `.env` file is present in the project root and populated with your Auth0 and Sandbox API credentials as described above.
+
+4.  **Run the FastAPI application:**
+    The server can be started using UV:
     ```bash
-    uvicorn src.sandbox_api_mcp_server.server:run --factory --host 0.0.0.0 --port 9100
+    uv run sandbox-api-mcp-server
     ```
-    Alternatively, if you have `src` in your `PYTHONPATH` or are in the `mcp-server` directory:
-    ```bash
-    python src/sandbox_api_mcp_server/server.py
-    ```
-    This will typically start the server on `http://0.0.0.0:9100`. The MCP endpoint will be available at `http://0.0.0.0:9100/sse` (as configured in `server.py`).
+    This will start the server on `http://0.0.0.0:9100`. The MCP endpoint will be available at `http://0.0.0.0:9100/sse` (as configured in `server.py`).
 
 ## Using with MCP Clients (e.g., Claude Desktop)
 
@@ -59,11 +60,7 @@ npm install -g mcp-remote
 
 Ensure your FastAPI MCP server is running locally (e.g., on `http://localhost:9100` with the MCP endpoint at `http://localhost:9100/sse`):
 ```bash
-python src/sandbox_api_mcp_server/server.py
-```
-Or using uvicorn directly:
-```bash
-uvicorn src.sandbox_api_mcp_server.server:run --factory --host 0.0.0.0 --port 9100
+uv run sandbox-api-mcp-server
 ```
 
 
@@ -244,9 +241,20 @@ The following tools are exposed, derived from the FastAPI application's endpoint
 
 ## Development
 
+### Project Structure
+
 *   The main FastAPI application logic is in `src/sandbox_api_mcp_server/server.py`.
 *   API routes (which become MCP tools) are defined in `src/sandbox_api_mcp_server/sandbox/routes.py`.
 *   Request/response models are primarily in `src/sandbox_api_mcp_server/sandbox/models.py` and `src/sandbox_api_mcp_server/models.py`.
 *   Authentication logic is in `src/sandbox_api_mcp_server/auth.py`.
-*   The project uses `uv` for dependency management (see `uv.lock`) and `pip` for installation (`requirements.txt`).
-*   Consider using `hatch` or `poetry` for more robust dependency management and packaging if distributing this server. (The `pyproject.toml` suggests `hatch` might be intended for future use).
+
+### Dependency Management
+
+This project uses [UV](https://docs.astral.sh/uv/) for fast, reliable dependency management:
+
+*   **Adding dependencies**: `uv add <package-name>`
+*   **Removing dependencies**: `uv remove <package-name>`
+*   **Updating dependencies**: `uv lock --upgrade`
+*   **Running scripts**: `uv run <command>`
+
+All dependencies are defined in `pyproject.toml` and locked in `uv.lock` for reproducible builds.
