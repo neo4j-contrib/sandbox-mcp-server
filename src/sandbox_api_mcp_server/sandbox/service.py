@@ -265,14 +265,19 @@ class SandboxApiClient:
         Executes a read query on the Neo4j database.
         Corresponds to POST /SandboxQuery in swagger.
         """
-        return await self._request("POST", "/SandboxRunQuery", json_data={"hash_key": hash_key, "statement": query, "params": params, "accessMode": "Read"})
+        result = await self._request("POST", "/SandboxRunQuery",
+                                    json_data={"hash_key": hash_key, "statement": query, "params": params,
+                                               "accessMode": "Read"})
+        return FastApiReadCypherQueryResponse(data=result, count=len(result))
 
     async def write_query(self, hash_key: str, query: str, params: Optional[Dict[str, Any]] = None) -> FastApiReadCypherQueryResponse:
         """
         Executes a write query on the Neo4j database.
         Corresponds to POST /SandboxQuery in swagger.
         """
-        return await self._request("POST", "/SandboxRunQuery", json_data={"hash_key": hash_key, "statement": query, "params": params})
+        result = await self._request("POST", "/SandboxRunQuery",
+                                      json_data={"hash_key": hash_key, "statement": query, "params": params})
+        return FastApiReadCypherQueryResponse(data=result, count=len(result))
 
 
 def get_sandbox_client(user: Annotated[Dict[str, Any], Depends(verify_auth)]) -> SandboxApiClient:
