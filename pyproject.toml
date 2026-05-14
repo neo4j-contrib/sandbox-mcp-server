@@ -38,8 +38,8 @@ sandbox-api-mcp-server = "sandbox_api_mcp_server:server.run"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.3,<9",
-    "pytest-asyncio>=0.24,<1",
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.0,<2",
     "respx>=0.21,<1",
 ]
 
