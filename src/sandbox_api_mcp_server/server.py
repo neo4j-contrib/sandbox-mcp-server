@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
+from fastmcp.server.providers.openapi import RouteMap, MCPType
 from uvicorn._types import ASGI3Application, ASGIReceiveCallable, ASGISendCallable, Scope
 from starlette.middleware.base import BaseHTTPMiddleware
 from .auth import fetch_jwks_public_key
@@ -91,18 +91,14 @@ def close_on_double_start(app):
     return wrapped
 
 
-def run():
+def build_app() -> FastAPI:
     """
-    Run the FastAPI server with MCP integration.
+    Construct the FastAPI app with MCP integration.
 
-    IMPORTANT: This uses a combined lifespan approach because http_app() requires
-    its lifespan to be run to initialize the task group. Simply mounting http_app
-    on a FastAPI app will NOT work - you MUST combine the lifespans.
-
+    IMPORTANT: http_app() requires its lifespan to be run to initialize the task
+    group. Mounting http_app without combining lifespans will NOT work.
     See: https://gofastmcp.com/integrations/asgi#asgi-starlette-fastmcp
     """
-    port = int(os.getenv("PORT", 9100))
-
     # Step 1: Create temporary FastAPI app for MCP conversion
     temp_app = FastAPI(title="SandboxApiMCP")
     temp_app.include_router(get_sandbox_api_router())
@@ -123,16 +119,13 @@ def run():
         route_maps=route_maps,
     )
 
-    # Get both transport apps
-    sse_app = mcp.sse_app()  # For backward compatibility
-    http_app = mcp.http_app()  # Modern transport
+    sse_app = mcp.http_app(transport="sse")
+    http_app = mcp.http_app()
 
     # Step 3: Create combined lifespan
     @asynccontextmanager
     async def combined_lifespan(app: FastAPI):
-        # Initialize JWKS public key
         app.state.jwks_public_key = await fetch_jwks_public_key(Auth0Settings().auth0_jwks_url)
-        # Run MCP app lifespan (required for task group initialization)
         async with http_app.lifespan(app):
             yield
 
@@ -161,16 +154,16 @@ def run():
     # HTTP at root (exposes /mcp endpoint) for modern clients
     app.mount("", http_app)
 
+    return app
+
+
+def run():
+    port = int(os.getenv("PORT", 9100))
+    app = build_app()
+
     logger.info("MCP server available at multiple transports:")
     logger.info("  - /sse → /sse (SSE transport - backward compatible)")
     logger.info("  - /mcp (HTTP transport - modern, recommended)")
-
-    # Authentication Note:
-    # - FastAPI routes use Depends(verify_auth) which handles both:
-    #   * OAuth2/JWT tokens from Auth0
-    #   * API Key authentication (Authorization: Bearer ApiKey <key>)
-    # - This provides backward compatibility with existing API consumers
-    # - MCP clients will use the existing FastAPI auth via standard HTTP headers
 
     uvicorn.run(app, host="0.0.0.0", port=port)
 

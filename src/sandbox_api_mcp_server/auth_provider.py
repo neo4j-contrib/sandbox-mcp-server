@@ -20,7 +20,7 @@ Future Enhancement:
     Reference: https://github.com/modelcontextprotocol/python-sdk/blob/main/src/mcp/server/auth/provider.py
 """
 
-from ..models import Auth0Settings
+from .models import Auth0Settings
 
 
 def get_auth0_settings():

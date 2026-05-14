@@ -4,7 +4,7 @@ from fastapi import Depends
 from fastapi import Query, Path, status
 from fastapi.responses import PlainTextResponse
 
-from .models import StartSandboxBody, StopSandboxBody, ExtendSandboxBody, AuraUploadBody, BackupDownloadUrlBody, FastApiReadCypherQueryBody, FastApiWriteCypherQueryBody
+from .models import StartSandboxBody, StopSandboxBody, ExtendSandboxBody, AuraUploadBody, BackupDownloadUrlBody, FastApiReadCypherQueryBody, FastApiWriteCypherQueryBody, FastApiReadCypherQueryResponse
 from ..helpers import get_logger
 from .service import call_sandbox_api, SandboxApiClient, get_sandbox_client
 
@@ -160,7 +160,7 @@ def get_sandbox_api_router() -> APIRouter:
             logger.error(f"Error getting Aura upload result: {e}")
             raise e
 
-    @router.get("/query/schema", operation_id="get_schema", tags=["Query"], response_model=Dict)
+    @router.get("/query/schema", operation_id="get_schema", tags=["Query"], response_model=FastApiReadCypherQueryResponse)
     async def get_schema(hash_key: str, client: Annotated[SandboxApiClient, Depends(get_sandbox_client)]):
         try:
             return await call_sandbox_api("get_schema", client, hash_key=hash_key)
@@ -168,7 +168,7 @@ def get_sandbox_api_router() -> APIRouter:
             logger.error(f"Error getting schema: {e}")
             raise e
 
-    @router.post("/query/read", operation_id="read_query", tags=["Query"], response_model=Dict)
+    @router.post("/query/read", operation_id="read_query", tags=["Query"], response_model=FastApiReadCypherQueryResponse)
     async def read(cypher_query: FastApiReadCypherQueryBody, client: Annotated[SandboxApiClient, Depends(get_sandbox_client)]):
         try:
             return await call_sandbox_api("read_query", client, hash_key=cypher_query.hash_key, query=cypher_query.query, params=cypher_query.params)
@@ -176,7 +176,7 @@ def get_sandbox_api_router() -> APIRouter:
             logger.error(f"Error reading query: {e}")
             raise e
 
-    @router.post("/query/write", operation_id="write_query", tags=["Query"], response_model=Dict)
+    @router.post("/query/write", operation_id="write_query", tags=["Query"], response_model=FastApiReadCypherQueryResponse)
     async def write(cypher_query: FastApiWriteCypherQueryBody, client: Annotated[SandboxApiClient, Depends(get_sandbox_client)]):
         try:
             return await call_sandbox_api("write_query", client, hash_key=cypher_query.hash_key, query=cypher_query.query, params=cypher_query.params)
